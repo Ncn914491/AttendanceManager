@@ -25,7 +25,7 @@ The **Attendance Manager** is a simple and efficient app that helps students tra
 ### Steps
 ```sh
 # Clone the repository
-git clone https://github.com/your-username/attendance-manager.git
+git clone https://github.com/Ncn914491/attendance-manager.git
 cd attendance-manager
 
 # Install dependencies
@@ -67,6 +67,6 @@ Then update dependencies selectively with `npm update <package-name>`.
 ## 💬 Contributions & Issues
 Feel free to report issues or contribute by submitting a pull request.
 
-
+🔗 **GitHub Repository:** [Simple To-Do List](https://github.com/Ncn914491/AttendenceManger)
 
 

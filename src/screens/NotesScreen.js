@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, ScrollView } from 'react-native';
-import { Card, Title, TextInput, Button, List, IconButton, Portal, Modal, Text } from 'react-native-paper';
+import { Title, TextInput, Button, List, IconButton, Portal, Text } from 'react-native-paper';
+import CustomCard from '../components/CustomCard';
+import CustomModal from '../components/CustomModal';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const STORAGE_KEY = '@notes';
@@ -70,9 +72,9 @@ const NotesScreen = () => {
   return (
     <ScrollView style={styles.container}>
       <Title style={styles.title}>Important Topics</Title>
-      
-      <Card style={styles.inputCard}>
-        <Card.Content>
+
+      <CustomCard style={styles.inputCard}>
+        <CustomCard.Content>
           <TextInput
             label="New Topic"
             value={newNote}
@@ -89,8 +91,8 @@ const NotesScreen = () => {
           >
             Add Topic
           </Button>
-        </Card.Content>
-      </Card>
+        </CustomCard.Content>
+      </CustomCard>
 
       {notes.map(note => (
         <List.Item
@@ -114,12 +116,11 @@ const NotesScreen = () => {
         />
       ))}
 
-      <Portal>
-        <Modal
-          visible={visible}
-          onDismiss={hideNote}
-          contentContainerStyle={styles.modal}
-        >
+      <CustomModal
+        visible={visible}
+        onDismiss={hideNote}
+        contentContainerStyle={styles.modal}
+      >
           {selectedNote && (
             <View>
               <Title>Topic Details</Title>
@@ -132,8 +133,7 @@ const NotesScreen = () => {
               </Button>
             </View>
           )}
-        </Modal>
-      </Portal>
+      </CustomModal>
     </ScrollView>
   );
 };
@@ -181,4 +181,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default NotesScreen; 
+export default NotesScreen;

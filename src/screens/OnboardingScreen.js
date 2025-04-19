@@ -10,7 +10,9 @@ const OnboardingScreen = ({ navigation }) => {
   const handleComplete = async () => {
     try {
       await AsyncStorage.setItem('@onboarding_completed', 'true');
-      navigation.replace('MainApp');
+      // Instead of using reset, we'll reload the app by forcing a re-render
+      // This will trigger the AppNavigator to check onboarding status again
+      navigation.navigate('MainApp');
     } catch (error) {
       console.error('Error saving onboarding status:', error);
     }
@@ -127,4 +129,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default OnboardingScreen; 
+export default OnboardingScreen;

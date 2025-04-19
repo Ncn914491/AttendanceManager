@@ -1,8 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, ScrollView } from 'react-native';
 import { Calendar } from 'react-native-calendars';
-import { Card, Title, Button, Portal, Modal, TextInput, List, IconButton, Text, SegmentedButtons } from 'react-native-paper';
-import { getAllAttendance, getAttendanceByDate, addAttendance, updateAttendance, deleteAttendance } from '../database/database';
+import { Title, Button, Portal, TextInput, List, IconButton, Text, SegmentedButtons } from 'react-native-paper';
+import CustomCard from '../components/CustomCard';
+import CustomModal from '../components/CustomModal';
+import { getAllAttendance, getAttendanceByDate, addAttendance, updateAttendance, deleteAttendance, addSubjectAttendance } from '../database/database';
+import { getWeeklyTimetable } from '../utils/timetable';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const HOLIDAYS_KEY = '@holidays';
@@ -11,6 +14,7 @@ const CalendarScreen = () => {
   const [markedDates, setMarkedDates] = useState({});
   const [selectedDate, setSelectedDate] = useState(null);
   const [visible, setVisible] = useState(false);
+  const [holidayModalVisible, setHolidayModalVisible] = useState(false);
   const [dayRecords, setDayRecords] = useState([]);
   const [editMode, setEditMode] = useState('view'); // 'view', 'add', 'edit'
   const [editStatus, setEditStatus] = useState('');
@@ -18,21 +22,44 @@ const CalendarScreen = () => {
   const [editMultiplier, setEditMultiplier] = useState('1');
   const [selectedRecord, setSelectedRecord] = useState(null);
   const [holidayNote, setHolidayNote] = useState('');
+  const [availableSubjects, setAvailableSubjects] = useState([]);
 
   useEffect(() => {
     loadAttendanceData();
     loadHolidays();
+    loadSubjects();
   }, []);
+
+  const loadSubjects = async () => {
+    try {
+      const timetable = await getWeeklyTimetable();
+      const subjects = new Set();
+
+      // Extract unique subjects from the timetable
+      Object.values(timetable).forEach(dayClasses => {
+        dayClasses.forEach(cls => {
+          if (cls.subject) {
+            subjects.add(cls.subject);
+          }
+        });
+      });
+
+      setAvailableSubjects(Array.from(subjects));
+    } catch (error) {
+      console.error('Error loading subjects:', error);
+      setAvailableSubjects(['Mathematics', 'Computer Science']);
+    }
+  };
 
   const loadAttendanceData = async () => {
     try {
       const allAttendance = await getAllAttendance();
       const dates = {};
-      
+
       allAttendance.forEach(record => {
         const existingDate = dates[record.date] || { marked: true, dots: [] };
         const dotColor = getStatusColor(record.status);
-        
+
         existingDate.dots = [...(existingDate.dots || []), { color: dotColor }];
         dates[record.date] = existingDate;
       });
@@ -62,7 +89,7 @@ const CalendarScreen = () => {
       if (holidays) {
         const holidayDates = JSON.parse(holidays);
         const dates = {};
-        
+
         Object.entries(holidayDates).forEach(([date, note]) => {
           dates[date] = {
             marked: true,
@@ -148,10 +175,10 @@ const CalendarScreen = () => {
     try {
       const holidays = await AsyncStorage.getItem(HOLIDAYS_KEY);
       const holidayDates = holidays ? JSON.parse(holidays) : {};
-      
+
       holidayDates[selectedDate] = holidayNote;
       await AsyncStorage.setItem(HOLIDAYS_KEY, JSON.stringify(holidayDates));
-      
+
       setMarkedDates(prev => ({
         ...prev,
         [selectedDate]: {
@@ -161,7 +188,7 @@ const CalendarScreen = () => {
         },
       }));
 
-      setVisible(false);
+      setHolidayModalVisible(false);
       setHolidayNote('');
     } catch (error) {
       console.error('Error saving holiday:', error);
@@ -170,11 +197,11 @@ const CalendarScreen = () => {
 
   const showHolidayModal = (date) => {
     setSelectedDate(date);
-    setVisible(true);
+    setHolidayModalVisible(true);
   };
 
   const hideHolidayModal = () => {
-    setVisible(false);
+    setHolidayModalVisible(false);
     setSelectedDate(null);
     setHolidayNote('');
   };
@@ -182,9 +209,9 @@ const CalendarScreen = () => {
   return (
     <ScrollView style={styles.container}>
       <Title style={styles.title}>Attendance Calendar</Title>
-      
-      <Card style={styles.card}>
-        <Card.Content>
+
+      <CustomCard style={styles.card}>
+        <CustomCard.Content>
           <Calendar
             onDayPress={handleDayPress}
             markedDates={markedDates}
@@ -196,118 +223,124 @@ const CalendarScreen = () => {
               dotColor: '#2196F3',
             }}
           />
-        </Card.Content>
-      </Card>
+        </CustomCard.Content>
+      </CustomCard>
 
-      <Portal>
-        <Modal
-          visible={visible}
-          onDismiss={hideModal}
-          contentContainerStyle={styles.modal}
-        >
-          {selectedDate && (
-            <View>
-              <Title>{new Date(selectedDate).toLocaleDateString()}</Title>
-              
-              {editMode === 'view' ? (
-                <>
+      <CustomModal
+        visible={visible}
+        onDismiss={hideModal}
+        contentContainerStyle={styles.modal}
+      >
+        {selectedDate && (
+          <View>
+            <Title>{new Date(selectedDate).toLocaleDateString()}</Title>
+
+            {editMode === 'view' ? (
+              <>
+                <Button
+                  mode="contained"
+                  onPress={showAddModal}
+                  style={styles.button}
+                >
+                  Add Attendance
+                </Button>
+
+                {dayRecords.map(record => (
+                  <List.Item
+                    key={record.id}
+                    title={record.notes.split(': ')[1] || 'Unknown Subject'}
+                    description={`Status: ${record.status} | Multiplier: ${record.multiplier || 1}`}
+                    right={props => (
+                      <IconButton
+                        {...props}
+                        icon="pencil"
+                        onPress={() => showEditModal(record)}
+                      />
+                    )}
+                  />
+                ))}
+              </>
+            ) : (
+              <>
+                <View style={styles.subjectSelector}>
+                  <Text style={styles.dropdownLabel}>Subject:</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                    {availableSubjects.map(subject => (
+                      <Button
+                        key={subject}
+                        mode={editSubject === subject ? 'contained' : 'outlined'}
+                        onPress={() => setEditSubject(subject)}
+                        style={styles.subjectButton}
+                        labelStyle={styles.subjectButtonLabel}
+                      >
+                        {subject}
+                      </Button>
+                    ))}
+                  </ScrollView>
+                </View>
+                <SegmentedButtons
+                  value={editStatus}
+                  onValueChange={setEditStatus}
+                  buttons={[
+                    { value: 'present', label: 'Present' },
+                    { value: 'absent', label: 'Absent' },
+                    { value: 'cancelled', label: 'Cancelled' },
+                  ]}
+                  style={styles.segmentedButtons}
+                />
+                <TextInput
+                  label="Multiplier"
+                  value={editMultiplier}
+                  onChangeText={setEditMultiplier}
+                  keyboardType="numeric"
+                  style={styles.input}
+                />
+                <View style={styles.modalButtons}>
+                  <Button
+                    mode="outlined"
+                    onPress={hideModal}
+                    style={styles.modalButton}
+                  >
+                    Cancel
+                  </Button>
                   <Button
                     mode="contained"
-                    onPress={showAddModal}
-                    style={styles.button}
+                    onPress={handleSaveAttendance}
+                    disabled={!editStatus || !editSubject}
+                    style={styles.modalButton}
                   >
-                    Add Attendance
+                    Save
                   </Button>
-                  
-                  {dayRecords.map(record => (
-                    <List.Item
-                      key={record.id}
-                      title={record.notes.split(': ')[1] || 'Unknown Subject'}
-                      description={`Status: ${record.status} | Multiplier: ${record.multiplier || 1}`}
-                      right={props => (
-                        <IconButton
-                          {...props}
-                          icon="pencil"
-                          onPress={() => showEditModal(record)}
-                        />
-                      )}
-                    />
-                  ))}
-                </>
-              ) : (
-                <>
-                  <TextInput
-                    label="Subject"
-                    value={editSubject}
-                    onChangeText={setEditSubject}
-                    style={styles.input}
-                  />
-                  <SegmentedButtons
-                    value={editStatus}
-                    onValueChange={setEditStatus}
-                    buttons={[
-                      { value: 'present', label: 'Present' },
-                      { value: 'absent', label: 'Absent' },
-                      { value: 'cancelled', label: 'Cancelled' },
-                    ]}
-                    style={styles.segmentedButtons}
-                  />
-                  <TextInput
-                    label="Multiplier"
-                    value={editMultiplier}
-                    onChangeText={setEditMultiplier}
-                    keyboardType="numeric"
-                    style={styles.input}
-                  />
-                  <View style={styles.modalButtons}>
-                    <Button
-                      mode="outlined"
-                      onPress={hideModal}
-                      style={styles.modalButton}
-                    >
-                      Cancel
-                    </Button>
-                    <Button
-                      mode="contained"
-                      onPress={handleSaveAttendance}
-                      disabled={!editStatus || !editSubject}
-                      style={styles.modalButton}
-                    >
-                      Save
-                    </Button>
-                  </View>
-                </>
-              )}
-            </View>
-          )}
-        </Modal>
-      </Portal>
+                </View>
+              </>
+            )}
+          </View>
+        )}
+      </CustomModal>
 
-      <Portal>
-        <Modal
-          visible={visible}
-          onDismiss={hideHolidayModal}
-          contentContainerStyle={styles.modal}
+      <CustomModal
+        visible={holidayModalVisible}
+        onDismiss={hideHolidayModal}
+        contentContainerStyle={styles.modal}
+      >
+        <Title>Mark Holiday</Title>
+        <TextInput
+          label="Holiday Note"
+          value={holidayNote}
+          onChangeText={setHolidayNote}
+          style={styles.input}
+          multiline
+          numberOfLines={3}
+        />
+        <Button
+          mode="contained"
+          onPress={saveHoliday}
+          disabled={!holidayNote.trim()}
+          style={styles.button}
         >
-          <Title>Mark Holiday</Title>
-          <TextInput
-            label="Holiday Note"
-            value={holidayNote}
-            onChangeText={setHolidayNote}
-            style={styles.input}
-            multiline
-            numberOfLines={3}
-          />
-          <Button
-            mode="contained"
-            onPress={saveHoliday}
-            disabled={!holidayNote.trim()}
-            style={styles.button}
-          >
-            Save Holiday
-          </Button>
-        </Modal>
-      </Portal>
+          Save Holiday
+        </Button>
+      </CustomModal>
     </ScrollView>
   );
 };
@@ -350,6 +383,21 @@ const styles = StyleSheet.create({
     flex: 1,
     marginHorizontal: 4,
   },
+  subjectSelector: {
+    marginVertical: 12,
+  },
+  dropdownLabel: {
+    fontSize: 16,
+    marginBottom: 8,
+    fontWeight: 'bold',
+  },
+  subjectButton: {
+    marginRight: 8,
+    marginBottom: 8,
+  },
+  subjectButtonLabel: {
+    fontSize: 12,
+  },
 });
 
-export default CalendarScreen; 
+export default CalendarScreen;

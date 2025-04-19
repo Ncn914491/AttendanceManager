@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, ScrollView } from 'react-native';
-import { Card, Title, TextInput, Button, List, IconButton, Checkbox } from 'react-native-paper';
+import { Title, TextInput, Button, List, IconButton, Checkbox } from 'react-native-paper';
+import CustomCard from '../components/CustomCard';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const STORAGE_KEY = '@todo_items';
@@ -66,9 +67,9 @@ const ToDoScreen = () => {
   return (
     <ScrollView style={styles.container}>
       <Title style={styles.title}>Assignments</Title>
-      
-      <Card style={styles.inputCard}>
-        <Card.Content>
+
+      <CustomCard style={styles.inputCard}>
+        <CustomCard.Content>
           <TextInput
             label="New Assignment"
             value={newTodo}
@@ -83,8 +84,8 @@ const ToDoScreen = () => {
           >
             Add Assignment
           </Button>
-        </Card.Content>
-      </Card>
+        </CustomCard.Content>
+      </CustomCard>
 
       {todos.map(todo => (
         <List.Item
@@ -137,4 +138,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default ToDoScreen; 
+export default ToDoScreen;

@@ -1,13 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, ScrollView } from 'react-native';
-import { Card, Title, TextInput, Button, List, IconButton, Portal, Modal, Text, SegmentedButtons } from 'react-native-paper';
-import { addExamMark, updateExamMark, deleteExamMark, getAllExamMarks } from '../database/database';
+import { View, StyleSheet, ScrollView, Alert } from 'react-native';
+import { Title, TextInput, Button, List, IconButton, Portal, Text, SegmentedButtons, Divider } from 'react-native-paper';
+import CustomCard from '../components/CustomCard';
+import CustomModal from '../components/CustomModal';
+import { addExamMark, updateExamMark, deleteExamMark, getAllExamMarks, getAllSubjects } from '../database/database';
+import { getWeeklyTimetable } from '../utils/timetable';
 
 const ExamMarksScreen = () => {
   const [examMarks, setExamMarks] = useState([]);
   const [visible, setVisible] = useState(false);
   const [editMode, setEditMode] = useState('add'); // 'add' or 'edit'
   const [selectedMark, setSelectedMark] = useState(null);
+  const [availableSubjects, setAvailableSubjects] = useState([]);
   const [formData, setFormData] = useState({
     subject: '',
     marks: '',
@@ -16,10 +20,28 @@ const ExamMarksScreen = () => {
     examDate: new Date().toISOString().split('T')[0],
     notes: '',
   });
+  const [customSubject, setCustomSubject] = useState('');
 
   useEffect(() => {
     loadExamMarks();
+    loadSubjects();
   }, []);
+
+  const loadSubjects = async () => {
+    try {
+      // Get all subjects from the database
+      const subjects = await getAllSubjects();
+      setAvailableSubjects(subjects);
+
+      if (subjects.length === 0) {
+        // Fallback to default subjects if none found
+        setAvailableSubjects(['Mathematics', 'Computer Science']);
+      }
+    } catch (error) {
+      console.error('Error loading subjects:', error);
+      setAvailableSubjects(['Mathematics', 'Computer Science']);
+    }
+  };
 
   const loadExamMarks = async () => {
     try {
@@ -72,28 +94,72 @@ const ExamMarksScreen = () => {
   };
 
   const handleSave = async () => {
-    if (!formData.subject || !formData.marks || !formData.totalMarks || !formData.weightage) return;
+    // Determine the subject (either selected or custom)
+    const subjectToUse = formData.subject || customSubject.trim();
+
+    if (!subjectToUse || !formData.marks || !formData.totalMarks) {
+      Alert.alert('Missing Information', 'Please fill in all required fields.');
+      return;
+    }
 
     try {
+      // Parse numeric values, ensuring they are valid numbers
+      const marks = parseFloat(formData.marks.replace(',', '.'));
+      const totalMarks = parseFloat(formData.totalMarks.replace(',', '.'));
+      let weightage = 0;
+
+      if (formData.weightage && formData.weightage.trim() !== '') {
+        weightage = parseFloat(formData.weightage.replace(',', '.'));
+      }
+
+      // Validate numeric values
+      if (isNaN(marks) || isNaN(totalMarks) || (formData.weightage && isNaN(weightage))) {
+        Alert.alert('Invalid Input', 'Please enter valid numbers for marks, total marks, and weightage.');
+        return;
+      }
+
+      // Validate marks are not greater than total marks
+      if (marks > totalMarks) {
+        Alert.alert('Invalid Input', 'Marks cannot be greater than total marks.');
+        return;
+      }
+
+      // Ensure date is in correct format
+      let examDate = formData.examDate;
+      if (!examDate || examDate.trim() === '') {
+        examDate = new Date().toISOString().split('T')[0];
+      }
+
+      // Prepare data object
       const data = {
-        subject: formData.subject,
-        marks: parseFloat(formData.marks),
-        totalMarks: parseFloat(formData.totalMarks),
-        weightage: parseFloat(formData.weightage),
-        examDate: formData.examDate,
-        notes: formData.notes,
+        subject: subjectToUse,
+        marks: marks,
+        totalMarks: totalMarks,
+        weightage: weightage,
+        examDate: examDate,
+        notes: formData.notes || '',
       };
+
+      console.log('Saving exam mark with data:', data);
 
       if (editMode === 'add') {
         await addExamMark(data.subject, data.marks, data.totalMarks, data.weightage, data.examDate, data.notes);
+        Alert.alert('Success', 'Exam mark added successfully!');
+
+        // If a new subject was added, refresh the subjects list
+        if (customSubject.trim() && !availableSubjects.includes(customSubject.trim())) {
+          await loadSubjects();
+        }
       } else if (editMode === 'edit' && selectedMark) {
         await updateExamMark(selectedMark.id, data.marks, data.totalMarks, data.weightage, data.notes);
+        Alert.alert('Success', 'Exam mark updated successfully!');
       }
 
       await loadExamMarks();
       hideModal();
     } catch (error) {
       console.error('Error saving exam mark:', error);
+      Alert.alert('Error', 'Failed to save exam mark: ' + (error.message || 'Unknown error'));
     }
   };
 
@@ -126,7 +192,7 @@ const ExamMarksScreen = () => {
   return (
     <ScrollView style={styles.container}>
       <Title style={styles.title}>Exam Marks</Title>
-      
+
       <Button
         mode="contained"
         onPress={showAddModal}
@@ -136,17 +202,21 @@ const ExamMarksScreen = () => {
       </Button>
 
       {examMarks.map(mark => (
-        <Card key={mark.id} style={styles.card}>
-          <Card.Content>
+        <CustomCard key={mark.id} style={styles.card}>
+          <CustomCard.Content>
             <Title>{mark.subject}</Title>
             <Text>Date: {new Date(mark.exam_date).toLocaleDateString()}</Text>
             <Text>Marks: {mark.marks}/{mark.total_marks}</Text>
             <Text>Percentage: {calculatePercentage(mark.marks, mark.total_marks)}%</Text>
             <Text>Grade: {getGrade(calculatePercentage(mark.marks, mark.total_marks))}</Text>
-            <Text>Weightage: {mark.weightage}%</Text>
-            <Text>Weighted Score: {calculateWeightedScore(mark.marks, mark.total_marks, mark.weightage)}%</Text>
+            {mark.weightage > 0 && (
+              <>
+                <Text>Weightage: {mark.weightage}%</Text>
+                <Text>Weighted Score: {calculateWeightedScore(mark.marks, mark.total_marks, mark.weightage)}%</Text>
+              </>
+            )}
             {mark.notes && <Text>Notes: {mark.notes}</Text>}
-            
+
             <View style={styles.cardActions}>
               <IconButton
                 icon="pencil"
@@ -157,23 +227,47 @@ const ExamMarksScreen = () => {
                 onPress={() => handleDelete(mark.id)}
               />
             </View>
-          </Card.Content>
-        </Card>
+          </CustomCard.Content>
+        </CustomCard>
       ))}
 
-      <Portal>
-        <Modal
-          visible={visible}
-          onDismiss={hideModal}
-          contentContainerStyle={styles.modal}
-        >
+      <CustomModal
+        visible={visible}
+        onDismiss={hideModal}
+        contentContainerStyle={styles.modal}
+      >
           <Title>{editMode === 'add' ? 'Add Exam Mark' : 'Edit Exam Mark'}</Title>
+          <Text style={styles.dropdownLabel}>Subject:</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.subjectSelector}>
+            {availableSubjects.map(subject => (
+              <Button
+                key={subject}
+                mode={formData.subject === subject ? 'contained' : 'outlined'}
+                onPress={() => {
+                  setFormData({ ...formData, subject });
+                  setCustomSubject('');
+                }}
+                style={styles.subjectButton}
+                labelStyle={styles.subjectButtonLabel}
+              >
+                {subject}
+              </Button>
+            ))}
+          </ScrollView>
+
+          <Text style={styles.dropdownLabel}>Or enter a new subject:</Text>
           <TextInput
-            label="Subject"
-            value={formData.subject}
-            onChangeText={(text) => setFormData({ ...formData, subject: text })}
+            label="Custom Subject"
+            value={customSubject}
+            onChangeText={(text) => {
+              setCustomSubject(text);
+              if (text.trim()) {
+                setFormData({ ...formData, subject: '' });
+              }
+            }}
             style={styles.input}
           />
+          <Divider style={styles.divider} />
           <TextInput
             label="Marks Obtained"
             value={formData.marks}
@@ -220,14 +314,13 @@ const ExamMarksScreen = () => {
             <Button
               mode="contained"
               onPress={handleSave}
-              disabled={!formData.subject || !formData.marks || !formData.totalMarks || !formData.weightage}
+              disabled={(!formData.subject && !customSubject.trim()) || !formData.marks || !formData.totalMarks}
               style={styles.modalButton}
             >
               Save
             </Button>
           </View>
-        </Modal>
-      </Portal>
+      </CustomModal>
     </ScrollView>
   );
 };
@@ -272,6 +365,24 @@ const styles = StyleSheet.create({
     flex: 1,
     marginHorizontal: 4,
   },
+  subjectSelector: {
+    marginVertical: 8,
+  },
+  dropdownLabel: {
+    fontSize: 16,
+    marginBottom: 8,
+    fontWeight: 'bold',
+  },
+  subjectButton: {
+    marginRight: 8,
+    marginBottom: 8,
+  },
+  subjectButtonLabel: {
+    fontSize: 12,
+  },
+  divider: {
+    marginVertical: 12,
+  },
 });
 
-export default ExamMarksScreen; 
+export default ExamMarksScreen;

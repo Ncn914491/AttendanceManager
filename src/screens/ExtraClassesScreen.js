@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { View, StyleSheet, ScrollView } from 'react-native';
-import { Card, Title, TextInput, Button, List, IconButton } from 'react-native-paper';
+import { Title, TextInput, Button, List, IconButton } from 'react-native-paper';
+import CustomCard from '../components/CustomCard';
 import { addAttendance } from '../database/database';
 
 const ExtraClassesScreen = () => {
@@ -35,9 +36,9 @@ const ExtraClassesScreen = () => {
   return (
     <ScrollView style={styles.container}>
       <Title style={styles.title}>Extra Classes</Title>
-      
-      <Card style={styles.inputCard}>
-        <Card.Content>
+
+      <CustomCard style={styles.inputCard}>
+        <CustomCard.Content>
           <TextInput
             label="Subject"
             value={subject}
@@ -58,8 +59,8 @@ const ExtraClassesScreen = () => {
           >
             Add Extra Class
           </Button>
-        </Card.Content>
-      </Card>
+        </CustomCard.Content>
+      </CustomCard>
 
       <Title style={styles.subtitle}>Today's Extra Classes</Title>
       {extraClasses.map(classItem => (
@@ -107,4 +108,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default ExtraClassesScreen; 
+export default ExtraClassesScreen;

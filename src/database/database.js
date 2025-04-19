@@ -1,13 +1,11 @@
-// Import using the latest API approach for expo-sqlite
-import { openDatabase } from 'expo-sqlite';
+import * as SQLite from 'expo-sqlite';
 
 let db = null;
 
-const getDatabase = () => {
+const getDatabase = async () => {
   if (!db) {
     try {
-      // Using the correct API for Expo SDK 52
-      db = openDatabase('attendance.db');
+      db = await SQLite.openDatabaseAsync('attendance.db');
       console.log('SQLite database opened successfully');
     } catch (error) {
       console.error('Error opening database:', error);
@@ -17,335 +15,366 @@ const getDatabase = () => {
   return db;
 };
 
-export const initDatabase = () => {
-  return new Promise((resolve, reject) => {
-    try {
-      const database = getDatabase();
-      console.log('Initializing database...');
-      
-      database.transaction(tx => {
-        // Create attendance table
-        tx.executeSql(
-          `CREATE TABLE IF NOT EXISTS attendance (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            date TEXT NOT NULL,
-            status TEXT NOT NULL,
-            notes TEXT,
-            multiplier INTEGER DEFAULT 1,
-            is_manual INTEGER DEFAULT 0
-          );`
-        );
+export const initDatabase = async () => {
+  try {
+    const db = await getDatabase();
+    console.log('Initializing database...');
 
-        // Create exam_marks table
-        tx.executeSql(
-          `CREATE TABLE IF NOT EXISTS exam_marks (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            subject TEXT NOT NULL,
-            marks REAL NOT NULL,
-            total_marks REAL NOT NULL,
-            weightage REAL NOT NULL,
-            exam_date TEXT NOT NULL,
-            notes TEXT
-          );`
-        );
+    // Use execAsync for multiple SQL statements
+    await db.execAsync(`
+      PRAGMA journal_mode = WAL;
 
-        // Create holidays table
-        tx.executeSql(
-          `CREATE TABLE IF NOT EXISTS holidays (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            date TEXT NOT NULL UNIQUE,
-            note TEXT
-          );`
-        );
-      }, 
-      error => {
-        console.error('Error creating tables:', error);
-        reject(error);
-      },
-      () => {
-        console.log('Database tables created successfully');
-        resolve();
-      });
-    } catch (error) {
-      console.error('Error initializing database:', error);
-      reject(error);
-    }
-  });
+      -- Drop the existing table if it exists
+      DROP TABLE IF EXISTS attendance;
+
+      -- Create a new table with subject as optional
+      CREATE TABLE IF NOT EXISTS attendance (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        subject TEXT DEFAULT 'Unknown',
+        date TEXT NOT NULL,
+        status TEXT NOT NULL,
+        multiplier INTEGER DEFAULT 1,
+        is_manual BOOLEAN DEFAULT 0,
+        is_archived BOOLEAN DEFAULT 0,
+        notes TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS exam_marks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        subject TEXT NOT NULL,
+        marks REAL NOT NULL,
+        total_marks REAL NOT NULL,
+        weightage REAL DEFAULT 1,
+        exam_date TEXT,
+        notes TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS holidays (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        date TEXT NOT NULL UNIQUE,
+        description TEXT
+      );
+    `);
+
+    console.log('Database initialized successfully');
+    return Promise.resolve();
+  } catch (error) {
+    console.error('Error initializing database:', error);
+    throw error;
+  }
 };
 
 // Test function to verify database setup
-export const testDatabase = () => {
-  return new Promise((resolve, reject) => {
-    try {
-      const database = getDatabase();
-      console.log('Testing database connection...');
-      
-      database.transaction(tx => {
-        // Try to insert a test record
-        tx.executeSql(
-          'INSERT INTO attendance (date, status, notes) VALUES (?, ?, ?);',
-          [new Date().toISOString().split('T')[0], 'test', 'Test record'],
-          (_, result) => {
-            console.log('Test record inserted successfully');
-            // Clean up test record
-            tx.executeSql(
-              'DELETE FROM attendance WHERE notes = ?;',
-              ['Test record'],
-              () => {
-                console.log('Test record cleaned up');
-                resolve();
-              },
-              (_, error) => {
-                console.error('Error cleaning up test record:', error);
-                reject(error);
-              }
-            );
-          },
-          (_, error) => {
-            console.error('Error inserting test record:', error);
-            reject(error);
-          }
-        );
-      });
-    } catch (error) {
-      console.error('Error testing database:', error);
-      reject(error);
+export const testDatabase = async () => {
+  try {
+    const database = await getDatabase();
+    console.log('Testing database connection...');
+
+    // Insert a test record
+    const today = new Date().toISOString().split('T')[0];
+    await database.runAsync(
+      'INSERT INTO attendance (subject, date, status, notes) VALUES (?, ?, ?, ?);',
+      'Test Subject', today, 'test', 'Test record'
+    );
+    console.log('Test record inserted successfully');
+
+    // Clean up test record
+    await database.runAsync(
+      'DELETE FROM attendance WHERE notes = ?;',
+      'Test record'
+    );
+    console.log('Test record cleaned up');
+
+    return Promise.resolve();
+  } catch (error) {
+    console.error('Error testing database:', error);
+    throw error;
+  }
+};
+
+export const addAttendance = async (date, status, notes = '', multiplier = 1, isManual = false) => {
+  try {
+    const database = await getDatabase();
+
+    // Extract subject from notes if it's in the format "Class: Subject"
+    let subject = 'Unknown';
+    if (notes && notes.includes(': ')) {
+      const parts = notes.split(': ');
+      if (parts.length >= 2) {
+        subject = parts[1];
+      }
     }
-  });
+
+    const result = await database.runAsync(
+      'INSERT INTO attendance (subject, date, status, notes, multiplier, is_manual) VALUES (?, ?, ?, ?, ?, ?);',
+      subject, date, status, notes, multiplier, isManual ? 1 : 0
+    );
+    return result.lastInsertRowId;
+  } catch (error) {
+    console.error('Error adding attendance:', error);
+    throw error;
+  }
 };
 
-export const addAttendance = (date, status, notes = '', multiplier = 1, isManual = false) => {
-  return new Promise((resolve, reject) => {
-    const database = getDatabase();
-    database.transaction(tx => {
-      tx.executeSql(
-        'INSERT INTO attendance (date, status, notes, multiplier, is_manual) VALUES (?, ?, ?, ?, ?);',
-        [date, status, notes, multiplier, isManual ? 1 : 0],
-        (_, result) => {
-          resolve(result.insertId);
-        },
-        (_, error) => {
-          reject(error);
-        }
-      );
-    });
-  });
+// Add attendance directly for a subject
+export const addSubjectAttendance = async (subject, date, status, multiplier = 1) => {
+  try {
+    const database = await getDatabase();
+    const notes = `Subject: ${subject}`;
+    const result = await database.runAsync(
+      'INSERT INTO attendance (subject, date, status, notes, multiplier, is_manual) VALUES (?, ?, ?, ?, ?, ?);',
+      subject, date, status, notes, multiplier, 1
+    );
+    return result.lastInsertRowId;
+  } catch (error) {
+    console.error('Error adding subject attendance:', error);
+    throw error;
+  }
 };
 
-export const updateAttendance = (id, status, multiplier = 1) => {
-  return new Promise((resolve, reject) => {
-    const database = getDatabase();
-    database.transaction(tx => {
-      tx.executeSql(
-        'UPDATE attendance SET status = ?, multiplier = ?, is_manual = 1 WHERE id = ?;',
-        [status, multiplier, id],
-        (_, result) => {
-          resolve(result.rowsAffected > 0);
-        },
-        (_, error) => {
-          reject(error);
-        }
-      );
-    });
-  });
+export const updateAttendance = async (id, status, multiplier = 1) => {
+  try {
+    const database = await getDatabase();
+    const result = await database.runAsync(
+      'UPDATE attendance SET status = ?, multiplier = ?, is_manual = 1 WHERE id = ?;',
+      status, multiplier, id
+    );
+    return result.changes > 0;
+  } catch (error) {
+    console.error('Error updating attendance:', error);
+    throw error;
+  }
 };
 
-export const getAttendance = (date) => {
-  return new Promise((resolve, reject) => {
-    const database = getDatabase();
-    database.transaction(tx => {
-      tx.executeSql(
-        'SELECT * FROM attendance WHERE date = ?;',
-        [date],
-        (_, { rows: { _array } }) => {
-          resolve(_array[0]);
-        },
-        (_, error) => {
-          reject(error);
-        }
-      );
-    });
-  });
+export const getAttendance = async (date) => {
+  try {
+    const database = await getDatabase();
+    return await database.getFirstAsync('SELECT * FROM attendance WHERE date = ?;', date);
+  } catch (error) {
+    console.error('Error getting attendance:', error);
+    throw error;
+  }
 };
 
-export const getAllAttendance = () => {
-  return new Promise((resolve, reject) => {
-    const database = getDatabase();
-    database.transaction(tx => {
-      tx.executeSql(
-        'SELECT * FROM attendance ORDER BY date DESC;',
-        [],
-        (_, { rows: { _array } }) => {
-          resolve(_array);
-        },
-        (_, error) => {
-          reject(error);
-        }
-      );
-    });
-  });
+export const getAllAttendance = async () => {
+  try {
+    const database = await getDatabase();
+    return await database.getAllAsync('SELECT * FROM attendance WHERE is_archived = 0 ORDER BY date DESC;');
+  } catch (error) {
+    console.error('Error getting all attendance:', error);
+    throw error;
+  }
 };
 
-export const getAttendanceBySubject = (subject) => {
-  return new Promise((resolve, reject) => {
-    const database = getDatabase();
-    database.transaction(tx => {
-      tx.executeSql(
-        'SELECT * FROM attendance WHERE notes LIKE ? ORDER BY date DESC;',
-        [`%${subject}%`],
-        (_, { rows: { _array } }) => {
-          resolve(_array);
-        },
-        (_, error) => {
-          reject(error);
-        }
-      );
-    });
-  });
+export const getArchivedAttendance = async () => {
+  try {
+    const database = await getDatabase();
+    return await database.getAllAsync('SELECT * FROM attendance WHERE is_archived = 1 ORDER BY date DESC;');
+  } catch (error) {
+    console.error('Error getting archived attendance:', error);
+    throw error;
+  }
 };
 
-export const getAttendanceByDate = (date) => {
-  return new Promise((resolve, reject) => {
-    const database = getDatabase();
-    database.transaction(tx => {
-      tx.executeSql(
-        'SELECT * FROM attendance WHERE date = ? ORDER BY id DESC;',
-        [date],
-        (_, { rows: { _array } }) => {
-          resolve(_array);
-        },
-        (_, error) => {
-          reject(error);
-        }
-      );
-    });
-  });
+export const archiveAttendance = async (id) => {
+  try {
+    const database = await getDatabase();
+    const result = await database.runAsync(
+      'UPDATE attendance SET is_archived = 1 WHERE id = ?;',
+      id
+    );
+    return result.changes > 0;
+  } catch (error) {
+    console.error('Error archiving attendance:', error);
+    throw error;
+  }
 };
 
-export const getAttendanceByDateRange = (startDate, endDate) => {
-  return new Promise((resolve, reject) => {
-    const database = getDatabase();
-    database.transaction(tx => {
-      tx.executeSql(
-        'SELECT * FROM attendance WHERE date BETWEEN ? AND ? ORDER BY date DESC;',
-        [startDate, endDate],
-        (_, { rows: { _array } }) => {
-          resolve(_array);
-        },
-        (_, error) => {
-          reject(error);
-        }
-      );
-    });
-  });
+export const restoreAttendance = async (id) => {
+  try {
+    const database = await getDatabase();
+    const result = await database.runAsync(
+      'UPDATE attendance SET is_archived = 0 WHERE id = ?;',
+      id
+    );
+    return result.changes > 0;
+  } catch (error) {
+    console.error('Error restoring attendance:', error);
+    throw error;
+  }
 };
 
-export const deleteAttendance = (id) => {
-  return new Promise((resolve, reject) => {
-    const database = getDatabase();
-    database.transaction(tx => {
-      tx.executeSql(
-        'DELETE FROM attendance WHERE id = ?;',
-        [id],
-        (_, result) => {
-          resolve(result.rowsAffected > 0);
-        },
-        (_, error) => {
-          reject(error);
-        }
-      );
-    });
-  });
+export const getAttendanceBySubject = async (subject) => {
+  try {
+    const database = await getDatabase();
+    return await database.getAllAsync(
+      'SELECT * FROM attendance WHERE notes LIKE ? AND is_archived = 0 ORDER BY date DESC;',
+      `%${subject}%`
+    );
+  } catch (error) {
+    console.error('Error getting attendance by subject:', error);
+    throw error;
+  }
 };
 
-export const addExamMark = (subject, marks, totalMarks, weightage, examDate, notes = '') => {
-  return new Promise((resolve, reject) => {
-    const database = getDatabase();
-    database.transaction(tx => {
-      tx.executeSql(
-        'INSERT INTO exam_marks (subject, marks, total_marks, weightage, exam_date, notes) VALUES (?, ?, ?, ?, ?, ?);',
-        [subject, marks, totalMarks, weightage, examDate, notes],
-        (_, result) => {
-          resolve(result.insertId);
-        },
-        (_, error) => {
-          reject(error);
-        }
-      );
-    });
-  });
+export const archiveAttendanceBySubject = async (subject) => {
+  try {
+    const database = await getDatabase();
+    const result = await database.runAsync(
+      'UPDATE attendance SET is_archived = 1 WHERE subject = ?;',
+      subject
+    );
+    return result.changes > 0;
+  } catch (error) {
+    console.error('Error archiving attendance by subject:', error);
+    throw error;
+  }
 };
 
-export const updateExamMark = (id, marks, totalMarks, weightage, notes = '') => {
-  return new Promise((resolve, reject) => {
-    const database = getDatabase();
-    database.transaction(tx => {
-      tx.executeSql(
-        'UPDATE exam_marks SET marks = ?, total_marks = ?, weightage = ?, notes = ? WHERE id = ?;',
-        [marks, totalMarks, weightage, notes, id],
-        (_, result) => {
-          resolve(result.rowsAffected > 0);
-        },
-        (_, error) => {
-          reject(error);
-        }
-      );
-    });
-  });
+export const getAttendanceByDate = async (date) => {
+  try {
+    const database = await getDatabase();
+    return await database.getAllAsync(
+      'SELECT * FROM attendance WHERE date = ? AND is_archived = 0 ORDER BY id DESC;',
+      date
+    );
+  } catch (error) {
+    console.error('Error getting attendance by date:', error);
+    throw error;
+  }
 };
 
-export const deleteExamMark = (id) => {
-  return new Promise((resolve, reject) => {
-    const database = getDatabase();
-    database.transaction(tx => {
-      tx.executeSql(
-        'DELETE FROM exam_marks WHERE id = ?;',
-        [id],
-        (_, result) => {
-          resolve(result.rowsAffected > 0);
-        },
-        (_, error) => {
-          reject(error);
-        }
-      );
-    });
-  });
+export const getAttendanceByDateRange = async (startDate, endDate) => {
+  try {
+    const database = await getDatabase();
+    return await database.getAllAsync(
+      'SELECT * FROM attendance WHERE date BETWEEN ? AND ? AND is_archived = 0 ORDER BY date DESC;',
+      startDate, endDate
+    );
+  } catch (error) {
+    console.error('Error getting attendance by date range:', error);
+    throw error;
+  }
 };
 
-export const getAllExamMarks = () => {
-  return new Promise((resolve, reject) => {
-    const database = getDatabase();
-    database.transaction(tx => {
-      tx.executeSql(
-        'SELECT * FROM exam_marks ORDER BY exam_date DESC;',
-        [],
-        (_, { rows: { _array } }) => {
-          resolve(_array);
-        },
-        (_, error) => {
-          reject(error);
-        }
-      );
-    });
-  });
+export const archiveAttendanceByDateRange = async (startDate, endDate) => {
+  try {
+    const database = await getDatabase();
+    const result = await database.runAsync(
+      'UPDATE attendance SET is_archived = 1 WHERE date BETWEEN ? AND ?;',
+      startDate, endDate
+    );
+    return result.changes > 0;
+  } catch (error) {
+    console.error('Error archiving attendance by date range:', error);
+    throw error;
+  }
 };
 
-export const getExamMarksBySubject = (subject) => {
-  return new Promise((resolve, reject) => {
-    const database = getDatabase();
-    database.transaction(tx => {
-      tx.executeSql(
-        'SELECT * FROM exam_marks WHERE subject = ? ORDER BY exam_date DESC;',
-        [subject],
-        (_, { rows: { _array } }) => {
-          resolve(_array);
-        },
-        (_, error) => {
-          reject(error);
-        }
-      );
+export const deleteAttendance = async (id) => {
+  try {
+    const database = await getDatabase();
+    const result = await database.runAsync('DELETE FROM attendance WHERE id = ?;', id);
+    return result.changes > 0;
+  } catch (error) {
+    console.error('Error deleting attendance:', error);
+    throw error;
+  }
+};
+
+export const addExamMark = async (subject, marks, totalMarks, weightage, examDate, notes = '') => {
+  try {
+    const database = await getDatabase();
+    const result = await database.runAsync(
+      'INSERT INTO exam_marks (subject, marks, total_marks, weightage, exam_date, notes) VALUES (?, ?, ?, ?, ?, ?);',
+      subject, marks, totalMarks, weightage, examDate, notes
+    );
+    return result.lastInsertRowId;
+  } catch (error) {
+    console.error('Error adding exam mark:', error);
+    throw error;
+  }
+};
+
+export const updateExamMark = async (id, marks, totalMarks, weightage, notes = '') => {
+  try {
+    const database = await getDatabase();
+    const result = await database.runAsync(
+      'UPDATE exam_marks SET marks = ?, total_marks = ?, weightage = ?, notes = ? WHERE id = ?;',
+      marks, totalMarks, weightage, notes, id
+    );
+    return result.changes > 0;
+  } catch (error) {
+    console.error('Error updating exam mark:', error);
+    throw error;
+  }
+};
+
+export const deleteExamMark = async (id) => {
+  try {
+    const database = await getDatabase();
+    const result = await database.runAsync('DELETE FROM exam_marks WHERE id = ?;', id);
+    return result.changes > 0;
+  } catch (error) {
+    console.error('Error deleting exam mark:', error);
+    throw error;
+  }
+};
+
+export const getAllExamMarks = async () => {
+  try {
+    const database = await getDatabase();
+    return await database.getAllAsync('SELECT * FROM exam_marks ORDER BY exam_date DESC;');
+  } catch (error) {
+    console.error('Error getting all exam marks:', error);
+    throw error;
+  }
+};
+
+export const getExamMarksBySubject = async (subject) => {
+  try {
+    const database = await getDatabase();
+    return await database.getAllAsync(
+      'SELECT * FROM exam_marks WHERE subject = ? ORDER BY exam_date DESC;',
+      subject
+    );
+  } catch (error) {
+    console.error('Error getting exam marks by subject:', error);
+    throw error;
+  }
+};
+
+// Get all unique subjects from the database
+export const getAllSubjects = async () => {
+  try {
+    const database = await getDatabase();
+
+    // Get subjects from attendance records
+    const attendanceSubjects = await database.getAllAsync(
+      'SELECT DISTINCT subject FROM attendance WHERE subject IS NOT NULL AND subject != "Unknown";'
+    );
+
+    // Get subjects from exam marks
+    const examSubjects = await database.getAllAsync(
+      'SELECT DISTINCT subject FROM exam_marks WHERE subject IS NOT NULL;'
+    );
+
+    // Combine and deduplicate subjects
+    const subjects = new Set();
+
+    attendanceSubjects.forEach(record => {
+      if (record.subject) subjects.add(record.subject);
     });
-  });
+
+    examSubjects.forEach(record => {
+      if (record.subject) subjects.add(record.subject);
+    });
+
+    return Array.from(subjects).sort();
+  } catch (error) {
+    console.error('Error getting all subjects:', error);
+    throw error;
+  }
 };
 
 export default getDatabase;

@@ -11,11 +11,13 @@ import LoadingScreen from '../screens/LoadingScreen';
 import OnboardingScreen from '../screens/OnboardingScreen';
 import HomeScreen from '../screens/HomeScreen';
 import AttendanceScreen from '../screens/AttendanceScreen';
-import ExtraClassesScreen from '../screens/ExtraClassesScreen';
+import AttendanceArchiveScreen from '../screens/AttendanceArchiveScreen';
+// Extra Classes screen removed
 import ToDoScreen from '../screens/ToDoScreen';
 import NotesScreen from '../screens/NotesScreen';
 import CalendarScreen from '../screens/CalendarScreen';
 import ExamMarksScreen from '../screens/ExamMarksScreen';
+import TimetableScreen from '../screens/TimetableScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -62,15 +64,7 @@ const MainApp = () => {
           ),
         }}
       />
-      <Tab.Screen
-        name="Extra Classes"
-        component={ExtraClassesScreen}
-        options={{
-          tabBarIcon: ({ color, size }) => (
-            <MaterialCommunityIcons name="plus-circle" size={size} color={color} />
-          ),
-        }}
-      />
+      {/* Extra Classes tab removed */}
       <Tab.Screen
         name="To-Do"
         component={ToDoScreen}
@@ -86,6 +80,15 @@ const MainApp = () => {
         options={{
           tabBarIcon: ({ color, size }) => (
             <MaterialCommunityIcons name="note-text" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tab.Screen
+        name="Timetable"
+        component={TimetableScreen}
+        options={{
+          tabBarIcon: ({ color, size }) => (
+            <MaterialCommunityIcons name="timetable" size={size} color={color} />
           ),
         }}
       />
@@ -124,7 +127,7 @@ const AppNavigator = () => {
     try {
       // Initialize database
       await initDatabase();
-      
+
       // Check onboarding status
       const status = await AsyncStorage.getItem('@onboarding_completed');
       setIsOnboardingCompleted(status === 'true');
@@ -161,19 +164,29 @@ const AppNavigator = () => {
   }
 
   return (
-    <Stack.Navigator 
-      screenOptions={{ 
+    <Stack.Navigator
+      initialRouteName={isOnboardingCompleted ? "MainApp" : "Onboarding"}
+      screenOptions={{
         headerShown: false,
         animation: 'slide_from_right',
       }}
     >
-      {!isOnboardingCompleted ? (
-        <Stack.Screen name="Onboarding" component={OnboardingScreen} />
-      ) : (
-        <Stack.Screen name="MainApp" component={MainApp} />
-      )}
+      <Stack.Screen name="Onboarding" component={OnboardingScreen} />
+      <Stack.Screen name="MainApp" component={MainApp} />
+      <Stack.Screen
+        name="AttendanceArchive"
+        component={AttendanceArchiveScreen}
+        options={{
+          headerShown: true,
+          title: 'Attendance Archive',
+          headerStyle: {
+            backgroundColor: '#2196F3',
+          },
+          headerTintColor: '#fff',
+        }}
+      />
     </Stack.Navigator>
   );
 };
 
-export default AppNavigator; 
+export default AppNavigator;
